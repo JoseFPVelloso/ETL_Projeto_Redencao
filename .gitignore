@@ -1,0 +1,42 @@
+# Ambientes Virtuais
+venv/
+env/
+.env
+
+# Python Cache (arquivos compilados inúteis para o repo)
+__pycache__/
+*.py[cod]
+
+# Arquivos de Sistema e IDE
+.vscode/
+.idea/
+Thumbs.db
+
+# Dados 
+*.csv
+*.xlsx
+*.xls
+*.pdf
+!modelo_exemplo.xlsx  # 
+
+# Logs
+*.log
+
+# --- Configurações e Segredos ---
+*.env
+config.env
+.env.*
+
+# --- Atalhos do Windows ---
+*.lnk
+
+# --- Opcional: Diretórios de build/cache que apareceram ---
+.ipynb_checkpoints/
+
+# --- Documentação e Logs ---
+*.txt
+
+# --- Exceções (Arquivos .txt que PODEM subir) ---
+!requirements.txt
+!README.txt
+!LICENSE.txt

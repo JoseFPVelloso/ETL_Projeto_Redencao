@@ -1,0 +1,36 @@
+# Ambiente Virtual
+.venv/
+venv/
+env/
+
+# Arquivos Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Dados sensíveis
+.env
+*.env
+
+# Dados locais
+data/raw/*
+data/processed/*
+data/logs/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Outros
+*.log
+*.db
+*.sqlite
