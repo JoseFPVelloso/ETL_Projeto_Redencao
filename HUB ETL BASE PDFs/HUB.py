@@ -19,7 +19,7 @@ print(f"Diretório Base da Aplicação (BASE_DIR): {BASE_DIR}")
 # --- Constantes de Caminhos ---
 # Todos os caminhos agora são absolutos, baseados no BASE_DIR
 # e usam os.path.join() para compatibilidade (sem barras \ ou /)
-#teste
+
 # Projeto 0: O Próprio Hub (está no BASE_DIR)
 HUB_README = os.path.join(BASE_DIR, "README.md")
 HUB_REQUIREMENTS = os.path.join(BASE_DIR, "requirements.txt") 
