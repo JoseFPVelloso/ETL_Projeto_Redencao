@@ -199,7 +199,10 @@ def gerar_relatorio_quadras(input_file, log_callback):
         if rtype == 'total_geral':
             for i in range(2, 14):
                 v_num = pd.to_numeric(vals[i], errors='coerce')
-                if pd.notna(v_num): total_geral_vals.append(float(v_num))
+                if pd.notna(v_num): 
+                    total_geral_vals.append(float(v_num))
+                else:
+                    total_geral_vals.append(0.0)
                 
         for i, val in enumerate(vals):
             if i >= 19: break # Proteção de limite de colunas
