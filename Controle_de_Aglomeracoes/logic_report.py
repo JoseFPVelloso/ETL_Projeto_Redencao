@@ -217,8 +217,7 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
                     if valor > LIMIAR:
                         alguma_acima_limiar = True
                         contador_acima_10 += 1
-                    if valor > 0:
-                        valores_por_periodo[periodo].append(valor)
+                    valores_por_periodo[periodo].append(valor)
             
             # As médias no Excel também podem ser float
             media_madrugada = round(sum(valores_por_periodo['madrugada']) / len(valores_por_periodo['madrugada'])) if valores_por_periodo['madrugada'] else ''
