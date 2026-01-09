@@ -8,7 +8,7 @@ from config import OUTPUT_FOLDER
 def load_and_standardize_data(filepath):
     """
     Carrega o arquivo CSV/Excel, padroniza nomes de colunas, 
-    converte datas e normaliza os períodos.
+    converte datas e normaliza os períodos de forma robusta.
     Retorna: (DataFrame processado, Lista de ruas únicas)
     """
     if filepath.endswith('.csv'):
@@ -29,12 +29,23 @@ def load_and_standardize_data(filepath):
     df['Data'] = pd.to_datetime(df['Data'], errors='coerce')
     df = df.dropna(subset=['Data'])
 
-    # Normalização de Períodos
-    periodo_map = {
-        '05h - Madrugada': 'Madrugada', '10h - Manhã': 'Manhã',
-        '15h - Tarde': 'Tarde', '20h - Noite': 'Noite'
-    }
-    df['Periodo_Norm'] = df['Período'].map(periodo_map).fillna(df['Período'])
+    # Tratamento Numérico (Garante que Qtd. pessoas seja número)
+    df['Qtd. pessoas'] = pd.to_numeric(df['Qtd. pessoas'], errors='coerce').fillna(0)
+
+    # Normalização de Períodos (Inteligente)
+    # Procura palavras-chave independentemente da formatação (ex: "15h - Tarde" ou "Tarde - 15h")
+    def normalize_period_text(val):
+        if pd.isna(val): return "Desconhecido"
+        val_str = str(val).lower().strip()
+        
+        if 'madrugada' in val_str: return 'Madrugada'
+        if 'manhã' in val_str or 'manha' in val_str: return 'Manhã'
+        if 'tarde' in val_str: return 'Tarde'
+        if 'noite' in val_str: return 'Noite'
+        
+        return str(val) # Retorna o original se não encontrar padrão
+
+    df['Periodo_Norm'] = df['Período'].apply(normalize_period_text)
 
     # Lista de ruas
     all_streets = sorted(df['Logradouro'].astype(str).unique())
@@ -54,9 +65,7 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
     if not data_fim:
         raise ValueError("Data final do Top 15 inválida.")
 
-    # CORREÇÃO: Subtraímos (dias - 1) para pegar o intervalo exato inclusivo.
-    # Ex: Se são 15 dias terminando dia 06, queremos do dia 23 ao 06 (15 dias).
-    # Antes (dias=15) resultava dia 22 (16 dias totais).
+    # Intervalo inclusivo (dias - 1)
     data_inicio = data_fim - timedelta(days=days_interval - 1)
     
     # Filtrar por data
@@ -68,46 +77,78 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
 
     # --- Lógica de Agregação ---
     # Pivotar
+    # aggfunc='sum' soma os dados do mesmo dia/período se houver duplicatas
     df_pivot = df.pivot_table(
-        index=['Logradouro', 'Data'], columns='Periodo_Norm', values='Qtd. pessoas', aggfunc='sum', fill_value=0
+        index=['Logradouro', 'Data'], 
+        columns='Periodo_Norm', 
+        values='Qtd. pessoas', 
+        aggfunc='sum', 
+        fill_value=0
     ).reset_index()
 
-    # Garantir colunas
-    for p in ['Madrugada', 'Manhã', 'Tarde', 'Noite']:
+    # Garantir colunas e Forçar Ordem
+    periodos_ordem = ['Madrugada', 'Manhã', 'Tarde', 'Noite']
+    for p in periodos_ordem:
         if p not in df_pivot.columns: df_pivot[p] = 0
 
-    # Médias
-    stats = df_pivot.groupby('Logradouro').agg({
-        'Madrugada': 'mean', 'Manhã': 'mean', 'Tarde': 'mean', 'Noite': 'mean'
-    }).reset_index()
+    # Médias (Agrupando por Logradouro -> Média dos dias)
+    stats = df_pivot.groupby('Logradouro')[periodos_ordem].mean().reset_index()
     
-    stats['Média pessoas'] = stats['Madrugada'] + stats['Manhã'] + stats['Tarde'] + stats['Noite']
+    # ARREDONDAMENTO: Converte para inteiro
+    stats[periodos_ordem] = stats[periodos_ordem].round(0).astype(int)
     
-    # Soma total para ranking
+    # Calcular Média por Período (Média das médias dos 4 períodos)
+    # Alterado de .sum() para .mean() conforme solicitado
+    stats['Média pessoas'] = stats[periodos_ordem].mean(axis=1).round(0).astype(int)
+    
+    # Soma total absoluta para ranking
     total_counts = df.groupby('Logradouro')['Qtd. pessoas'].sum().reset_index().rename(columns={'Qtd. pessoas': 'Soma pessoas'})
     stats = stats.merge(total_counts, on='Logradouro')
 
-    # Top 15
+    # Top 15 - Ordenação
     top15 = stats.sort_values(by='Soma pessoas', ascending=False).head(15).reset_index(drop=True)
     top15.index = top15.index + 1
+
+    # Reordenar colunas
+    cols_base = ['Logradouro', 'Soma pessoas', 'Média pessoas']
+    # Garante que as colunas existam antes de selecionar
+    cols_final = cols_base + [p for p in periodos_ordem if p in top15.columns]
+    top15 = top15[cols_final]
 
     # Aglomerações
     df_aglo = df[df['Qtd. pessoas'] > 10].copy()
     if not df_aglo.empty:
         aglo_stats = df_aglo.groupby(['Logradouro', 'Periodo_Norm']).size().unstack(fill_value=0)
-        for p in ['Madrugada', 'Manhã', 'Tarde', 'Noite']:
+        for p in periodos_ordem:
             if p not in aglo_stats.columns: aglo_stats[p] = 0
+        
+        # Garante ordem
+        aglo_stats = aglo_stats[periodos_ordem]
+        
         aglo_stats['Total Aglomerações'] = aglo_stats.sum(axis=1)
         aglo_stats = aglo_stats.reset_index()
         top15_aglo = top15[['Logradouro']].merge(aglo_stats, on='Logradouro', how='left').fillna(0)
     else:
         top15_aglo = top15[['Logradouro']].copy()
-        for c in ['Total Aglomerações','Madrugada','Manhã','Tarde','Noite']: top15_aglo[c] = 0
+        top15_aglo['Total Aglomerações'] = 0
+        for c in periodos_ordem: top15_aglo[c] = 0
 
-    # Renomear
-    top15 = top15.rename(columns={'Madrugada': 'Média Madrugada', 'Manhã': 'Média Manhã', 'Tarde': 'Média Tarde', 'Noite': 'Média Noite'})
-    cols_aglo = {'Madrugada': 'Qtd Madrugada', 'Manhã': 'Qtd Manhã', 'Tarde': 'Qtd Tarde', 'Noite': 'Qtd Noite'}
-    top15_aglo = top15_aglo.rename(columns=cols_aglo)
+    # Converter colunas de aglomeração para int
+    cols_num_aglo = ['Total Aglomerações'] + periodos_ordem
+    top15_aglo[cols_num_aglo] = top15_aglo[cols_num_aglo].astype(int)
+
+    # Renomear para visualização final
+    rename_map_media = {
+        'Madrugada': 'Média Madrugada', 'Manhã': 'Média Manhã', 
+        'Tarde': 'Média Tarde', 'Noite': 'Média Noite'
+    }
+    top15 = top15.rename(columns=rename_map_media)
+    
+    rename_map_aglo = {
+        'Madrugada': 'Qtd Madrugada', 'Manhã': 'Qtd Manhã', 
+        'Tarde': 'Qtd Tarde', 'Noite': 'Qtd Noite'
+    }
+    top15_aglo = top15_aglo.rename(columns=rename_map_aglo)
 
     # --- Salvar Arquivo ---
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -121,7 +162,17 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
         for idx, row in top15.iterrows():
             rua = row['Logradouro']
             df_rua = df[df['Logradouro'] == rua].copy()
+            
+            # Pivot para abas individuais
             df_rua_pivot = df_rua.pivot_table(index='Data', columns='Periodo_Norm', values='Qtd. pessoas', aggfunc='sum').fillna(0)
+            
+            # Garante colunas e ordem
+            for p in periodos_ordem:
+                if p not in df_rua_pivot.columns: df_rua_pivot[p] = 0
+            
+            # Ordena e Converte para Int
+            df_rua_pivot = df_rua_pivot[periodos_ordem].astype(int)
+            
             sheet_name = f"{idx}_{rua[:20]}"
             clean_sheet_name = re.sub(r'[\\/*?:\[\]]', '', sheet_name)[:31]
             df_rua_pivot.to_excel(writer, sheet_name=clean_sheet_name)
@@ -156,7 +207,9 @@ def generate_monthly_excel(df_filtered, start_date_str, end_date_str):
 
         grouped = df_p.groupby(['Ano', 'Mes_Num', 'Mês'])
         stats = grouped.agg(Qtd_Dias=('Data', 'nunique'), Soma_Pessoas=('Qtd. pessoas', 'sum')).reset_index()
-        stats['Média Pessoas'] = round(stats['Soma_Pessoas'] / stats['Qtd_Dias'], 2)
+        
+        # ARREDONDAMENTO
+        stats['Média Pessoas'] = (stats['Soma_Pessoas'] / stats['Qtd_Dias']).round(0).astype(int)
         
         df_aglo = df_p[df_p['Qtd. pessoas'] > 10]
         if not df_aglo.empty:
@@ -164,7 +217,13 @@ def generate_monthly_excel(df_filtered, start_date_str, end_date_str):
                 Qtd_Aglomeracoes=('Qtd. pessoas', 'count'), Soma_Pessoas_Aglo=('Qtd. pessoas', 'sum')
             ).reset_index()
             final = stats.merge(aglo_grouped, on=['Ano', 'Mes_Num', 'Mês'], how='left').fillna(0)
-            final['Média Pessoas Aglomerações'] = round(final['Soma_Pessoas_Aglo'] / final['Qtd_Aglomeracoes'], 2).fillna(0)
+            
+            # ARREDONDAMENTO
+            final['Média Pessoas Aglomerações'] = (final['Soma_Pessoas_Aglo'] / final['Qtd_Aglomeracoes']).fillna(0).round(0).astype(int)
+            
+            # Garante inteiros
+            final['Qtd_Aglomeracoes'] = final['Qtd_Aglomeracoes'].astype(int)
+            final['Soma_Pessoas_Aglo'] = final['Soma_Pessoas_Aglo'].astype(int)
         else:
             final = stats.copy()
             for c in ['Qtd_Aglomeracoes','Soma_Pessoas_Aglo','Média Pessoas Aglomerações']: final[c] = 0
@@ -185,6 +244,7 @@ def generate_monthly_excel(df_filtered, start_date_str, end_date_str):
     with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
         get_stats(df).to_excel(writer, sheet_name='Geral', index=False)
         
+        # Ordem cronológica correta
         periodos = ['Madrugada', 'Manhã', 'Tarde', 'Noite']
         prefixes = {'Madrugada': '05h - ', 'Manhã': '10h - ', 'Tarde': '15h - ', 'Noite': '20h - '}
         media_por_periodo_dict = {}
@@ -201,6 +261,9 @@ def generate_monthly_excel(df_filtered, start_date_str, end_date_str):
             ordem_meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
                            'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
             df_grafico = df_grafico.reindex(ordem_meses).dropna(how='all')
+            # Garante ordem das colunas no gráfico
+            cols_grafico = [c for c in periodos if c in df_grafico.columns]
+            df_grafico = df_grafico[cols_grafico]
             df_grafico.to_excel(writer, sheet_name='Para Gráfico', index_label='Mês')
             
     return True, filepath
