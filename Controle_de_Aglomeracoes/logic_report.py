@@ -118,8 +118,20 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
         log_callback(f"✓ Dados preparados")
 
         # 7. Calcular Média Anterior
-        data_inicio_anterior = data_inicio - timedelta(days=1)
-        data_fim_anterior = data_fim - timedelta(days=1)
+        # --- ATUALIZAÇÃO LÓGICA (CORREÇÃO SEGUNDA-FEIRA) ---
+        # Se a data final do relatório for Segunda-feira (weekday == 0),
+        # o comparativo deve ser com o período encerrado na Sexta-feira (3 dias atrás).
+        # Para outros dias, o comparativo segue sendo o dia anterior (1 dia atrás).
+        
+        if data_fim.weekday() == 0:  # 0 significa Segunda-feira
+            dias_recuo = 3
+            log_callback(f"📅 Relatório de Segunda-feira detectado: comparando com 3 dias atrás (Sexta-feira).")
+        else:
+            dias_recuo = 1
+            
+        data_inicio_anterior = data_inicio - timedelta(days=dias_recuo)
+        data_fim_anterior = data_fim - timedelta(days=dias_recuo)
+        
         df_anterior = df[(df['data'] >= data_inicio_anterior) & (df['data'] <= data_fim_anterior)].copy()
 
         media_anterior = 0.0
