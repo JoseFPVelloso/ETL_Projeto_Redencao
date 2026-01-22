@@ -2,29 +2,33 @@ import os
 from datetime import datetime, timedelta
 
 # --- Caminhos ---
-# Define a pasta onde o script está rodando
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_FOLDER = os.path.join(BASE_DIR, 'relatorios')
+ARQUIVO_REGIOES = os.path.join(BASE_DIR, 'regioes.xlsx') # Caminho do mapa de regiões
 
-# Cria a pasta de relatórios se não existir
 if not os.path.exists(OUTPUT_FOLDER):
     os.makedirs(OUTPUT_FOLDER)
 
-# --- Configurações de Data Padrão ---
+# --- Configurações de Data ---
 hoje = datetime.now()
 
-# Padrão 1: Últimos 15 dias (para análise diária/ranking)
+# Padrão 1: Últimos 15 dias (Ranking Diário)
 DATA_FIM_PADRAO = hoje
 DATA_INICIO_DIARIA = hoje - timedelta(days=15)
 
-# Padrão 2: Desde Junho (para análise mensal)
-# Se estivermos antes de junho no ano, pega junho do ano anterior, senão junho deste ano
-ano_corrente = hoje.year
-mes_junho = 6
-DATA_INICIO_MENSAL = datetime(ano_corrente, mes_junho, 1)
+# Padrão 2: Desde Junho (Evolução Mensal)
+# Correção da lógica: Se estamos antes de Junho, pega Junho do ano passado.
+# Se já passamos de Junho, pega Junho deste ano.
+ano_mensal = hoje.year
+if hoje.month < 6:
+    ano_mensal -= 1
 
-# --- Estilos da UI (Tkinter) ---
-TITLE = "Analisador de Contagens - Okuhara & Centro"
-GEOMETRY = "700x550"
-BG_COLOR = "#f0f0f0"
-ACCENT_COLOR = "#0078d7" # Azul estilo Windows
+DATA_INICIO_MENSAL = datetime(ano_mensal, 6, 1)
+
+# --- Estilos da UI ---
+TITLE = "Analisador Okuhara & Centro - Versão PRO"
+GEOMETRY = "900x650" # Aumentei um pouco para caber os checkboxes
+BG_COLOR = "#f4f4f9"
+ACCENT_COLOR = "#2980b9" # Azul mais sóbrio
+ERROR_COLOR = "#c0392b"
+SUCCESS_COLOR = "#27ae60"
