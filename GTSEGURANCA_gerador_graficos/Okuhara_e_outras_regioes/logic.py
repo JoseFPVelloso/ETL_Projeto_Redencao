@@ -9,84 +9,122 @@ class AnalisadorDados:
     def __init__(self):
         self.df = None
         self.caminho_arquivo = ""
-        self.mapa_regioes = {}
+        self.mapa_regioes = {}      # Mapeia: Nome Oficial -> Região
+        self.mapa_correcao = {}     # Mapeia: Nome Torto -> Nome Oficial
         self.regioes_disponiveis = []
 
     def carregar_mapa_regioes(self):
-        """Carrega o arquivo regioes.xlsx"""
+        """
+        Carrega o arquivo regioes.xlsx.
+        Agora suporta 3 colunas para UNIFICAR logradouros:
+        Col 1: Nome Original (na planilha de dados)
+        Col 2: Nome Oficial (Unificado)
+        Col 3: Região
+        """
         if not os.path.exists(config.ARQUIVO_REGIOES):
             return False, "Arquivo 'regioes.xlsx' não encontrado."
         
         try:
             df_map = pd.read_excel(config.ARQUIVO_REGIOES)
-            col_log = next((c for c in df_map.columns if 'Padrão' in c or 'Logradouro' in c), None)
-            col_reg = next((c for c in df_map.columns if 'Região' in c or 'Regiao' in c), None)
             
-            if not col_log or not col_reg:
-                return False, "Colunas 'Padrão' e 'Região' necessárias no arquivo de mapa."
+            # Limpeza dos nomes das colunas (remove espaços)
+            df_map.columns = df_map.columns.str.strip()
+            cols = df_map.columns
+            
+            # Lógica Inteligente de Colunas
+            if len(cols) >= 3:
+                # Estrutura NOVA: [Original, Oficial, Regiao]
+                col_orig = cols[0]
+                col_oficial = cols[1]
+                col_reg = cols[2]
+                
+                # Limpa dados
+                df_map[col_orig] = df_map[col_orig].astype(str).str.strip()
+                df_map[col_oficial] = df_map[col_oficial].astype(str).str.strip()
+                df_map[col_reg] = df_map[col_reg].astype(str).str.strip()
+                
+                # Cria os dicionários
+                self.mapa_correcao = dict(zip(df_map[col_orig], df_map[col_oficial]))
+                self.mapa_regioes = dict(zip(df_map[col_oficial], df_map[col_reg]))
+                
+                msg = f"Mapa carregado: {len(self.mapa_correcao)} correções e {len(self.mapa_regioes)} locais oficiais."
 
-            df_map[col_log] = df_map[col_log].astype(str).str.strip()
-            df_map[col_reg] = df_map[col_reg].astype(str).str.strip()
+            elif len(cols) == 2:
+                # Estrutura ANTIGA: [Original, Regiao] (Sem correção de nome)
+                col_orig = cols[0]
+                col_reg = cols[1]
+                
+                df_map[col_orig] = df_map[col_orig].astype(str).str.strip()
+                df_map[col_reg] = df_map[col_reg].astype(str).str.strip()
+                
+                self.mapa_correcao = {} # Sem correção
+                self.mapa_regioes = dict(zip(df_map[col_orig], df_map[col_reg]))
+                
+                msg = f"Mapa simples carregado (sem unificação): {len(self.mapa_regioes)} locais."
+            else:
+                return False, "O arquivo regioes.xlsx precisa ter 2 ou 3 colunas."
             
-            self.mapa_regioes = dict(zip(df_map[col_log], df_map[col_reg]))
-            return True, f"Mapa carregado: {len(self.mapa_regioes)} locais."
+            return True, msg
             
         except Exception as e:
-            return False, f"Erro no mapa: {str(e)}"
+            return False, f"Erro ao ler regioes.xlsx: {str(e)}"
 
     def carregar_dados(self, caminho):
         try:
             self.df = pd.read_excel(caminho)
             self.caminho_arquivo = caminho
 
-            # Padronização
+            # 1. Padronização de Colunas
             self.df.columns = self.df.columns.str.strip()
-            mapa_cols = {'Região': 'Regiao_Original', 'Regiao': 'Regiao_Original',
-                         'Período': 'Periodo', 'Logradouro': 'Logradouro', 
-                         'Quantidade': 'Quantidade', 'Data': 'Data'}
+            mapa_cols = {
+                'Região': 'Regiao_Original', 'Regiao': 'Regiao_Original',
+                'Período': 'Periodo', 'Logradouro': 'Logradouro', 
+                'Quantidade': 'Quantidade', 'Data': 'Data'
+            }
             self.df.rename(columns=mapa_cols, inplace=True)
             
             if 'Logradouro' in self.df.columns:
                 self.df['Logradouro'] = self.df['Logradouro'].astype(str).str.strip()
 
-            # Aplicação do Mapa
+            # 2. APLICAÇÃO DA CORREÇÃO DE NOMES (FUSÃO)
+            if self.mapa_correcao:
+                # Se o logradouro estiver no mapa de correção, substitui pelo oficial
+                # Se não estiver, mantém o original
+                self.df['Logradouro'] = self.df['Logradouro'].map(self.mapa_correcao).fillna(self.df['Logradouro'])
+
+            # 3. APLICAÇÃO DA REGIÃO
             if self.mapa_regioes:
+                # Agora mapeamos a região baseada no nome JÁ CORRIGIDO
                 self.df['Regiao'] = self.df['Logradouro'].map(self.mapa_regioes).fillna('Outros')
             else:
+                # Fallback antigo
                 if 'Regiao_Original' in self.df.columns: self.df['Regiao'] = self.df['Regiao_Original']
-                elif 'Logradouro' in self.df.columns: self.df['Regiao'] = self.df['Logradouro'].str.split(' - ', n=1).str[0].str.strip()
                 else: self.df['Regiao'] = 'Desconhecido'
 
-            # Tratamentos Finais
+            # 4. Tratamentos Numéricos e Data
             self.df['Quantidade'] = pd.to_numeric(self.df['Quantidade'], errors='coerce').fillna(0)
             self.df['Data'] = pd.to_datetime(self.df['Data'], errors='coerce')
             self.df = self.df.dropna(subset=['Data'])
             if 'Periodo' in self.df.columns: self.df['Periodo'] = self.df['Periodo'].astype(str).str.strip()
 
-            # Lista Única para UI (Ordenada, com Outros no fim)
+            # Atualiza lista para UI
             self.regioes_disponiveis = sorted(self.df['Regiao'].unique().tolist())
             if "Outros" in self.regioes_disponiveis:
                 self.regioes_disponiveis.remove("Outros")
                 self.regioes_disponiveis.append("Outros")
 
-            return True, f"Base carregada: {len(self.df)} registros."
+            return True, f"Base processada: {len(self.df)} registros (Nomes unificados)."
         except Exception as e:
             return False, str(e)
 
     def obter_logradouros_da_regiao(self, regiao):
-        """Retorna lista de logradouros presentes na base para uma região específica"""
-        if self.df is None or regiao not in self.df['Regiao'].unique():
-            return []
-        
-        # Filtra e pega valores únicos, ordenados
-        logs = self.df[self.df['Regiao'] == regiao]['Logradouro'].unique()
-        return sorted(logs)
+        if self.df is None or regiao not in self.df['Regiao'].unique(): return []
+        return sorted(self.df[self.df['Regiao'] == regiao]['Logradouro'].unique())
 
     def _sanitizar_nome_aba(self, nome, nomes_existentes):
         nome_limpo = str(nome).replace('/', '-').replace('\\', '-').replace(':', '')
         nome_limpo = re.sub(r'[?*\[\]]', '', nome_limpo)[:31]
         if not nome_limpo: nome_limpo = "Sheet"
-        
         nome_final = nome_limpo
         c = 1
         while nome_final.lower() in [n.lower() for n in nomes_existentes]:
@@ -126,7 +164,6 @@ class AnalisadorDados:
         return True, "\n".join(msgs)
 
     def _processar_ranking_excel(self, df, caminho, d_ini, d_fim):
-        # Lógica idêntica ao anterior (Ranking + Abas Pivot)
         dias = (d_fim - d_ini).days + 1
         total_p = dias * 2
         abas = []
@@ -134,10 +171,9 @@ class AnalisadorDados:
             for reg in df.groupby('Regiao')['Quantidade'].sum().sort_values(ascending=False).index:
                 df_reg = df[df['Regiao'] == reg]
                 
-                # Resumo
                 df_rank = df_reg.groupby('Logradouro').agg({'Quantidade':'sum'}).reset_index()
                 df_rank['Média'] = df_rank['Quantidade'] / total_p
-                # Turnos
+                
                 detalhes = []
                 for l in df_rank['Logradouro']:
                     dl = df_reg[df_reg['Logradouro']==l]
@@ -148,7 +184,6 @@ class AnalisadorDados:
                 df_rank = pd.concat([df_rank, pd.DataFrame(detalhes)], axis=1).sort_values('Média', ascending=False)
                 df_rank.to_excel(writer, sheet_name=self._sanitizar_nome_aba(f"Rank {reg}", abas), index=False)
                 
-                # Pivots
                 for l in df_rank['Logradouro']:
                     dd = df_reg[df_reg['Logradouro']==l].copy()
                     dd['P_Norm'] = dd['Periodo'].apply(lambda x: 'Manhã' if 'Manhã' in x or '10h' in x else 'Tarde')
@@ -158,7 +193,6 @@ class AnalisadorDados:
                     piv.to_excel(writer, sheet_name=self._sanitizar_nome_aba(l, abas), index=False)
 
     def _processar_mensal_excel(self, df, caminho):
-        # Lógica idêntica ao anterior (Mensal + Gráfico + Totais)
         df['Mes_Ano'] = df['Data'].dt.strftime('%Y-%m')
         map_mes = {1:'Jan', 2:'Fev', 3:'Mar', 4:'Abr', 5:'Mai', 6:'Jun', 7:'Jul', 8:'Ago', 9:'Set', 10:'Out', 11:'Nov', 12:'Dez'}
         abas = []
