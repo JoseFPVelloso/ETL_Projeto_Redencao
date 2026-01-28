@@ -160,7 +160,9 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
 
     # --- Salvar Arquivo ---
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-    nome_arquivo = f"top15_media_diaria_pessoas_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    
+    # 1. NOME ATUALIZADO (DIÁRIO)
+    nome_arquivo = f"Ranking_Diario_{datetime.now().strftime('%Y%m%d')}_Centro.xlsx"
     filepath = os.path.join(OUTPUT_FOLDER, nome_arquivo)
     
     with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
@@ -181,14 +183,12 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
             # Ordena e Converte para Int
             df_rua_pivot = df_rua_pivot[periodos_ordem].astype(int)
 
-            # --- MELHORIA: ADICIONAR NOME DA RUA NA TABELA ---
-            # Reseta o index para transformar Data em coluna e insere o Nome
+            # Insere o Nome da Rua como primeira coluna
             df_rua_pivot = df_rua_pivot.reset_index()
             df_rua_pivot.insert(0, 'Logradouro', rua)
             
             sheet_name = f"{idx}_{rua[:20]}"
             clean_sheet_name = re.sub(r'[\\/*?:\[\]]', '', sheet_name)[:31]
-            # Salva sem index numérico, pois agora temos colunas explicativas
             df_rua_pivot.to_excel(writer, sheet_name=clean_sheet_name, index=False)
             
     return True, filepath
@@ -252,7 +252,10 @@ def generate_monthly_excel(df_filtered, start_date_str, end_date_str):
 
     # --- Salvar Arquivo ---
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-    nome_arquivo = f"media_pessoas_aglomeracoes_{data_inicio.strftime('%Y%m%d')}_a_{data_fim.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.xlsx"
+    
+    # 2. NOME ATUALIZADO (MENSAL)
+    # Inclui o período no nome para evitar confusão sobre quais meses estão no relatório
+    nome_arquivo = f"Ranking_Mensal_{data_inicio.strftime('%Y%m%d')}_a_{data_fim.strftime('%Y%m%d')}_Centro.xlsx"
     filepath = os.path.join(OUTPUT_FOLDER, nome_arquivo)
     
     with pd.ExcelWriter(filepath, engine='openpyxl') as writer:

@@ -141,13 +141,29 @@ class AnalisadorDados:
         df_filter = self.df[self.df['Regiao'].isin(regioes_selecionadas)].copy()
         if df_filter.empty: return False, "Sem dados para as regiões selecionadas."
 
+        # === NOVO: Configuração do Nome do Arquivo ===
+        # 1. Junta os nomes das regiões selecionadas
+        # Ex: "Complexo Okuhara Koei", "CnR Lapa" -> "Complexo_Okuhara_Koei_CnR_Lapa"
+        nomes_regioes = [str(r).replace(" ", "_").replace("/", "-").replace("\\", "") for r in regioes_selecionadas]
+        sufixo_regioes = "_".join(nomes_regioes)
+        
+        # Trava de segurança para nome de arquivo muito longo (max ~100 chars é seguro)
+        if len(sufixo_regioes) > 100:
+            sufixo_regioes = sufixo_regioes[:100] + "..."
+            
+        # 2. Define a DATA atual para o nome (Ex: 28-01-2026)
+        data_str = datetime.now().strftime('%d-%m-%Y')
+
         # 1. DIÁRIO
         try:
             df_d = df_filter[(df_filter['Data'] >= params_diario['inicio']) & (df_filter['Data'] <= params_diario['fim'])].copy()
             if not df_d.empty:
-                path = os.path.join(config.OUTPUT_FOLDER, f"1_Ranking_Diario_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")
+                # Mudança solicitada: Ranking_Diario_DATA_Regioes.xlsx
+                nome_arq = f"Ranking_Diario_{data_str}_{sufixo_regioes}.xlsx"
+                path = os.path.join(config.OUTPUT_FOLDER, nome_arq)
+                
                 self._processar_ranking_excel(df_d, path, params_diario['inicio'], params_diario['fim'])
-                msgs.append("✓ Ranking Diário OK")
+                msgs.append(f"✓ Ranking Diário OK: {nome_arq}")
             else: msgs.append("⚠️ Diário vazio")
         except Exception as e: msgs.append(f"❌ Erro Diário: {e}")
 
@@ -155,9 +171,12 @@ class AnalisadorDados:
         try:
             df_m = df_filter[(df_filter['Data'] >= params_mensal['inicio']) & (df_filter['Data'] <= params_mensal['fim'])].copy()
             if not df_m.empty:
-                path = os.path.join(config.OUTPUT_FOLDER, f"2_Evolucao_Mensal_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")
+                # Mudança solicitada: Ranking_Mensal_DATA_Regioes.xlsx (Antes era Evolucao_Mensal)
+                nome_arq = f"Ranking_Mensal_{data_str}_{sufixo_regioes}.xlsx"
+                path = os.path.join(config.OUTPUT_FOLDER, nome_arq)
+                
                 self._processar_mensal_excel(df_m, path)
-                msgs.append("✓ Evolução Mensal OK")
+                msgs.append(f"✓ Ranking Mensal OK: {nome_arq}")
             else: msgs.append("⚠️ Mensal vazio")
         except Exception as e: msgs.append(f"❌ Erro Mensal: {e}")
 
@@ -190,6 +209,11 @@ class AnalisadorDados:
                     piv = dd.pivot_table(index='Data', columns='P_Norm', values='Quantidade', aggfunc='sum', fill_value=0)
                     piv = piv.reindex(pd.date_range(d_ini, d_fim, freq='D'), fill_value=0).reset_index().rename(columns={'index':'Data'})
                     piv['Data'] = piv['Data'].dt.strftime('%d/%m/%Y')
+                    
+                    # === NOVA COLUNA DE IDENTIFICAÇÃO ===
+                    # Insere o Logradouro na segunda coluna (índice 1), ao lado da Data
+                    piv.insert(1, 'Logradouro', l)
+                    
                     piv.to_excel(writer, sheet_name=self._sanitizar_nome_aba(l, abas), index=False)
 
     def _processar_mensal_excel(self, df, caminho):
