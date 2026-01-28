@@ -2,13 +2,14 @@ import pandas as pd
 import numpy as np
 import os
 import re
+import json
 from datetime import datetime, timedelta
-from config import OUTPUT_FOLDER
+from config import OUTPUT_FOLDER, CONFIG_FOLDER
 
 def load_and_standardize_data(filepath):
     """
     Carrega o arquivo CSV/Excel, padroniza nomes de colunas, 
-    converte datas e normaliza os períodos de forma robusta.
+    converte datas, aplica correções de homônimos e normaliza os períodos.
     Retorna: (DataFrame processado, Lista de ruas únicas)
     """
     if filepath.endswith('.csv'):
@@ -25,6 +26,18 @@ def load_and_standardize_data(filepath):
     if missing:
         raise ValueError(f"Colunas ausentes no arquivo: {', '.join(missing)}")
 
+    # --- CORREÇÃO DE HOMÔNIMOS ---
+    # Tenta carregar o JSON de correções da pasta Config
+    try:
+        json_path = os.path.join(CONFIG_FOLDER, 'correcoes_ruas.json')
+        if os.path.exists(json_path):
+            with open(json_path, 'r', encoding='utf-8') as f:
+                correcoes = json.load(f)
+            # Aplica as correções na coluna Logradouro
+            df['Logradouro'] = df['Logradouro'].replace(correcoes)
+    except Exception as e:
+        print(f"Aviso: Não foi possível carregar/aplicar correções de homônimos: {e}")
+
     # Tratamento de Data
     df['Data'] = pd.to_datetime(df['Data'], errors='coerce')
     df = df.dropna(subset=['Data'])
@@ -33,7 +46,6 @@ def load_and_standardize_data(filepath):
     df['Qtd. pessoas'] = pd.to_numeric(df['Qtd. pessoas'], errors='coerce').fillna(0)
 
     # Normalização de Períodos (Inteligente)
-    # Procura palavras-chave independentemente da formatação (ex: "15h - Tarde" ou "Tarde - 15h")
     def normalize_period_text(val):
         if pd.isna(val): return "Desconhecido"
         val_str = str(val).lower().strip()
@@ -43,7 +55,7 @@ def load_and_standardize_data(filepath):
         if 'tarde' in val_str: return 'Tarde'
         if 'noite' in val_str: return 'Noite'
         
-        return str(val) # Retorna o original se não encontrar padrão
+        return str(val)
 
     df['Periodo_Norm'] = df['Período'].apply(normalize_period_text)
 
@@ -77,7 +89,6 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
 
     # --- Lógica de Agregação ---
     # Pivotar
-    # aggfunc='sum' soma os dados do mesmo dia/período se houver duplicatas
     df_pivot = df.pivot_table(
         index=['Logradouro', 'Data'], 
         columns='Periodo_Norm', 
@@ -97,8 +108,7 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
     # ARREDONDAMENTO: Converte para inteiro
     stats[periodos_ordem] = stats[periodos_ordem].round(0).astype(int)
     
-    # Calcular Média por Período (Média das médias dos 4 períodos)
-    # Alterado de .sum() para .mean() conforme solicitado
+    # Calcular Média por Período
     stats['Média pessoas'] = stats[periodos_ordem].mean(axis=1).round(0).astype(int)
     
     # Soma total absoluta para ranking
@@ -111,7 +121,6 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
 
     # Reordenar colunas
     cols_base = ['Logradouro', 'Soma pessoas', 'Média pessoas']
-    # Garante que as colunas existam antes de selecionar
     cols_final = cols_base + [p for p in periodos_ordem if p in top15.columns]
     top15 = top15[cols_final]
 
@@ -122,7 +131,6 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
         for p in periodos_ordem:
             if p not in aglo_stats.columns: aglo_stats[p] = 0
         
-        # Garante ordem
         aglo_stats = aglo_stats[periodos_ordem]
         
         aglo_stats['Total Aglomerações'] = aglo_stats.sum(axis=1)
@@ -172,10 +180,16 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
             
             # Ordena e Converte para Int
             df_rua_pivot = df_rua_pivot[periodos_ordem].astype(int)
+
+            # --- MELHORIA: ADICIONAR NOME DA RUA NA TABELA ---
+            # Reseta o index para transformar Data em coluna e insere o Nome
+            df_rua_pivot = df_rua_pivot.reset_index()
+            df_rua_pivot.insert(0, 'Logradouro', rua)
             
             sheet_name = f"{idx}_{rua[:20]}"
             clean_sheet_name = re.sub(r'[\\/*?:\[\]]', '', sheet_name)[:31]
-            df_rua_pivot.to_excel(writer, sheet_name=clean_sheet_name)
+            # Salva sem index numérico, pois agora temos colunas explicativas
+            df_rua_pivot.to_excel(writer, sheet_name=clean_sheet_name, index=False)
             
     return True, filepath
 
