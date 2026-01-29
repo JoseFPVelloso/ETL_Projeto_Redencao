@@ -1,6 +1,6 @@
 # logic_report.py
 # (Baseado em 05_processed_relatorio_diario_contagem_centro.py)
-# VERSÃO ATUALIZADA: agora importa logic_text_generator
+# VERSÃO ATUALIZADA: agora importa logic_text_generator e ordena variações extremas
 
 import pandas as pd
 import numpy as np
@@ -110,7 +110,6 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
         })
         df['data'] = pd.to_datetime(df['data'], errors='coerce')
         df = df.dropna(subset=['data'])
-        # AQUI OS DADOS SÃO CARREGADOS COMO FLOAT
         df['qtd_pessoas'] = pd.to_numeric(df['qtd_pessoas'], errors='coerce')
         df = df.dropna(subset=['qtd_pessoas'])
         df['periodo_norm'] = df['periodo'].apply(normalizar_periodo)
@@ -118,11 +117,6 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
         log_callback(f"✓ Dados preparados")
 
         # 7. Calcular Média Anterior
-        # --- ATUALIZAÇÃO LÓGICA (CORREÇÃO SEGUNDA-FEIRA) ---
-        # Se a data final do relatório for Segunda-feira (weekday == 0),
-        # o comparativo deve ser com o período encerrado na Sexta-feira (3 dias atrás).
-        # Para outros dias, o comparativo segue sendo o dia anterior (1 dia atrás).
-        
         if data_fim.weekday() == 0:  # 0 significa Segunda-feira
             dias_recuo = 3
             log_callback(f"📅 Relatório de Segunda-feira detectado: comparando com 3 dias atrás (Sexta-feira).")
@@ -223,7 +217,6 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
                     dia_str = dia.strftime('%d/%m/%Y')
                     chave = (logradouro, periodo, dia_str)
                     valor = contagens.get(chave, 0)
-                    # No Excel, mostramos o valor original (pode ser float)
                     linha.append(valor if valor > 0 else '')
                     soma_linha += valor
                     if valor > LIMIAR:
@@ -231,7 +224,6 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
                         contador_acima_10 += 1
                     valores_por_periodo[periodo].append(valor)
             
-            # As médias no Excel também podem ser float
             media_madrugada = round(sum(valores_por_periodo['madrugada']) / len(valores_por_periodo['madrugada'])) if valores_por_periodo['madrugada'] else ''
             media_manha = round(sum(valores_por_periodo['manhã']) / len(valores_por_periodo['manhã'])) if valores_por_periodo['manhã'] else ''
             media_tarde = round(sum(valores_por_periodo['tarde']) / len(valores_por_periodo['tarde'])) if valores_por_periodo['tarde'] else ''
@@ -288,8 +280,34 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
         log_callback(f"  • Média atual: {media_atual:.0f} pessoas/dia")
         log_callback(f"  • Média anterior: {media_anterior:.0f} pessoas/dia")
 
+        # --- NOVO BLOCO: DETECÇÃO E ORDENAÇÃO DE VARIAÇÕES (MÍNIMO 10 PESSOAS) ---
+        log_callback(f"📝 Detectando variações de volume >= 10 pessoas...")
+        todas_variacoes = []
+        DIFERENCA_MINIMA = 10 
+
+        for logradouro in logradouros:
+            for periodo in periodos:
+                dias_ref = dias_noite if periodo == 'noite' else dias_validos
+                for i in range(len(dias_ref) - 1):
+                    v1 = contagens.get((logradouro, periodo, dias_ref[i].strftime('%d/%m/%Y')), 0)
+                    v2 = contagens.get((logradouro, periodo, dias_ref[i+1].strftime('%d/%m/%Y')), 0)
+                    
+                    dif_bruta = v2 - v1
+                    if abs(dif_bruta) >= DIFERENCA_MINIMA:
+                        pct_info = (dif_bruta / v1 * 100) if v1 > 0 else 100.0
+                        todas_variacoes.append({
+                            'logradouro': logradouro, 'periodo': periodo,
+                            'd1': dias_ref[i].strftime('%d/%m'), 'd2': dias_ref[i+1].strftime('%d/%m'),
+                            'v1': v1, 'v2': v2, 'pct': pct_info, 'dif_bruta': dif_bruta
+                        })
+        
+        # ORDENAÇÃO: Primeiro os maiores aumentos (desc), depois as maiores reduções (asc)
+        aumentos = sorted([v for v in todas_variacoes if v['dif_bruta'] > 0], key=lambda x: x['dif_bruta'], reverse=True)
+        reducoes = sorted([v for v in todas_variacoes if v['dif_bruta'] < 0], key=lambda x: x['dif_bruta']) # Mais negativo primeiro
+        variacoes_extremas = aumentos + reducoes
+        # -----------------------------------------------------------------------
+
         # 13. Gerar Dados de Análise (Cálculos)
-        # Esta seção agora apenas CALCULA os valores
         log_callback(f"\n📝 Gerando dados para o texto de análise...")
         
         def somar_periodo_no_dia(periodo, dia_str):
@@ -300,7 +318,6 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
                 if valor > LIMIAR:
                     enderecos += 1
                     soma_aglom += valor
-            # Retorna um dicionário com os totais (são floats, pois vêm de 'qtd_pessoas')
             return {'total': total, 'enderecos': enderecos, 'soma_aglom': soma_aglom}
 
         ultimo_dia_val = dias_validos[-1] if dias_validos else data_fim
@@ -315,19 +332,14 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
         soma_por_logradouro = {}
         for logradouro in logradouros:
             total = sum(contagens.get((logradouro, p, d.strftime('%d/%m/%Y')), 0) for p in periodos for d in ultimos_3_dias)
-            if total > 0:
-                soma_por_logradouro[logradouro] = total
+            if total > 0: soma_por_logradouro[logradouro] = total
         
         top_5_logradouros = sorted(soma_por_logradouro.items(), key=lambda x: x[1], reverse=True)[:5]
-
         variacao = round(((media_atual - media_anterior) / media_anterior) * 100, 1) if media_anterior > 0 else 0
-        
         hoje = datetime.now()
-        dia_semana = hoje.weekday()
-        ref_texto = "sexta-feira" if dia_semana == 0 else "ontem"
-        log_callback(f"✓ Dados de análise calculados.")
+        ref_texto = "sexta-feira" if hoje.weekday() == 0 else "ontem"
 
-        # 14. Criar Rodapé (sem alteração)
+        # 14. Criar Rodapé
         hoje_formatado = hoje.strftime('%d/%m/%Y')
         rodape = [
             ['Nota: As ruas sem aglomeração (>10) no período solicitado estão ocultas, mas constam na planilha.'],
@@ -337,40 +349,31 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
         rodape_norm = [linha + [''] * (colunas_totais - len(linha)) for linha in rodape]
         log_callback(f"✓ Rodapé criado")
 
-        # 15. Montar Saída Completa (sem alteração)
+        # 15. Montar Saída Completa
         saida = [header1, header2, header3, *matriz, total_row, *rodape_norm]
-        log_callback(f"\n✓ Saída montada: {len(saida)} linhas × {colunas_totais} colunas")
         
         # 16. Exportar para Excel
         nome_arquivo_saida = f"relatorio_diario_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         caminho_saida = DOCS_DIR / nome_arquivo_saida
-        log_callback(f"\n💾 Exportando para Excel...")
-        df_saida = pd.DataFrame(saida)
-        df_saida.to_excel(caminho_saida, index=False, header=False, engine='openpyxl')
-        log_callback(f"✓ Arquivo base criado: {nome_arquivo_saida}")
+        pd.DataFrame(saida).to_excel(caminho_saida, index=False, header=False, engine='openpyxl')
 
-        # 17. Aplicar Formatação (sem alteração)
+        # 17. Aplicar Formatação
         log_callback(f"\n🎨 Aplicando formatação...")
         wb = load_workbook(caminho_saida)
         ws = wb.active
-        
-        fonte_bold = Font(bold=True)
-        fonte_italic = Font(italic=True, size=10)
+        fonte_bold, fonte_italic = Font(bold=True), Font(italic=True, size=10)
         fill_cinza = PatternFill(start_color='E0E0E0', end_color='E0E0E0', fill_type='solid')
         fill_azul = PatternFill(start_color='B7E1FA', end_color='B7E1FA', fill_type='solid')
         border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=colunas_totais)
         ws.cell(1, 1).alignment = Alignment(horizontal='center', vertical='center')
-        ws.cell(1, 1).font = fonte_bold
-        ws.cell(1, 1).fill = fill_cinza
+        ws.cell(1, 1).font, ws.cell(1, 1).fill = fonte_bold, fill_cinza
         
         for row in range(2, 4):
             for col in range(1, colunas_totais + 1):
                 cell = ws.cell(row, col)
-                cell.font = fonte_bold
-                cell.fill = fill_cinza
-                cell.border = border_thin
+                cell.font, cell.fill, cell.border = fonte_bold, fill_cinza, border_thin
         
         ws.merge_cells(start_row=2, start_column=1, end_row=3, end_column=1)
         ws.cell(2, 1).alignment = Alignment(horizontal='center', vertical='center')
@@ -393,108 +396,74 @@ def execute_report_generator(processed_file_path, data_inicio, data_fim, log_cal
         ws.cell(2, col_maior10).value = ">10"
         ws.cell(2, col_maior10).alignment = Alignment(horizontal='center', vertical='center')
 
-        for col in range(3, colunas_totais + 1):
-            ws.cell(3, col).alignment = Alignment(horizontal='center')
-
         primeira_linha_dados = 4
         col_madrugada = colunas_totais - 4
-        
         for row_idx, visivel in enumerate(visiveis):
             row = primeira_linha_dados + row_idx
-            if not visivel:
-                ws.row_dimensions[row].hidden = True
-            
+            if not visivel: ws.row_dimensions[row].hidden = True
             for col in range(1, colunas_totais + 1):
                 cell = ws.cell(row, col)
                 cell.alignment = Alignment(horizontal='center')
                 cell.border = border_thin
-                
                 if col >= 3 and isinstance(cell.value, (int, float)) and cell.value > LIMIAR:
-                     if col != col_maior10: # Não colorir a coluna ">10"
-                        cell.fill = fill_azul
+                     if col != col_maior10: cell.fill = fill_azul
 
         linha_total = primeira_linha_dados + len(matriz)
         for col in range(1, colunas_totais + 1):
             cell = ws.cell(linha_total, col)
-            cell.font = fonte_bold
-            cell.fill = fill_cinza
-            cell.alignment = Alignment(horizontal='center')
-            cell.border = border_thin
-            if col == col_maior10:
-                cell.value = '' # Limpar total da coluna >10
+            cell.font, cell.fill, cell.alignment, cell.border = fonte_bold, fill_cinza, Alignment(horizontal='center'), border_thin
+            if col == col_maior10: cell.value = ''
 
         linha_rodape_inicio = linha_total + 1
         for row in range(linha_rodape_inicio, linha_rodape_inicio + 3):
-            for col in range(1, colunas_totais + 1):
-                ws.cell(row, col).font = fonte_italic
+            for col in range(1, colunas_totais + 1): ws.cell(row, col).font = fonte_italic
 
         linha_media = linha_rodape_inicio + 4
-        ws.cell(linha_media, 2).value = 'Média:'
-        ws.cell(linha_media, 2).font = fonte_bold
-        ws.cell(linha_media, 3).value = int(media_atual) # Mostrar média como inteiro no Excel também
-        ws.cell(linha_media, 3).font = fonte_bold
+        ws.cell(linha_media, 2).value, ws.cell(linha_media, 2).font = 'Média:', fonte_bold
+        ws.cell(linha_media, 3).value, ws.cell(linha_media, 3).font = int(media_atual), fonte_bold
         ws.cell(linha_media, 3).alignment = Alignment(horizontal='center')
 
-        ws.column_dimensions['A'].width = 8
-        ws.column_dimensions['B'].width = 45
-        for col in range(3, col_madrugada):
-            ws.column_dimensions[get_column_letter(col)].width = 6
-        for col in range(col_madrugada, col_maior10 + 1):
-            ws.column_dimensions[get_column_letter(col)].width = 12
+        ws.column_dimensions['A'].width, ws.column_dimensions['B'].width = 8, 45
+        for col in range(3, col_madrugada): ws.column_dimensions[get_column_letter(col)].width = 6
+        for col in range(col_madrugada, col_maior10 + 1): ws.column_dimensions[get_column_letter(col)].width = 12
 
         wb.save(caminho_saida)
         log_callback(f"✓ Formatação aplicada")
 
-        # 18. Exportar Texto de Análise para TXT (MUITO MAIS LIMPO)
+        # 18. Exportar Texto de Análise
         log_callback(f"\n📝 Exportando texto de análise...")
-        
-        nome_base = nome_arquivo_saida.replace('.xlsx', '')
-        nome_txt = f"{nome_base}_analise.txt"
+        nome_txt = f"{nome_arquivo_saida.replace('.xlsx', '')}_analise.txt"
         caminho_txt = DOCS_DIR / nome_txt
 
-        # 1. Criar o "pacote" de dados para o gerador de texto
         report_data = {
-            'data_inicio': data_inicio,
-            'data_fim': data_fim,
-            'data_inicio_anterior': data_inicio_anterior,
-            'data_fim_anterior': data_fim_anterior,
-            'hoje': hoje,
-            'media_atual': media_atual,
-            'media_anterior': media_anterior,
-            'variacao': variacao,
-            'ultimo_dia_val': ultimo_dia_val,
-            'ultimo_dia_noite': ultimo_dia_noite,
-            'madr': madr,
-            'manha': manha,
-            'tarde': tarde,
-            'noite': noite,
-            'top_5_logradouros': top_5_logradouros,
+            'data_inicio': data_inicio, 'data_fim': data_fim,
+            'data_inicio_anterior': data_inicio_anterior, 'data_fim_anterior': data_fim_anterior,
+            'hoje': hoje, 'media_atual': media_atual, 'media_anterior': media_anterior,
+            'variacao': variacao, 'ultimo_dia_val': ultimo_dia_val, 'ultimo_dia_noite': ultimo_dia_noite,
+            'madr': madr, 'manha': manha, 'tarde': tarde, 'noite': noite,
+            'top_5_logradouros': top_5_logradouros, 
+            'variacoes_extremas': variacoes_extremas, 
             'ref_texto': ref_texto
         }
         
-        # 2. Chamar o novo módulo para gerar o texto
         conteudo_txt = logic_text_generator.generate_analysis_text(report_data)
-        
-        # 3. Salvar o arquivo
-        with open(caminho_txt, 'w', encoding='utf-8') as f:
-            f.write(conteudo_txt)
+        with open(caminho_txt, 'w', encoding='utf-8') as f: f.write(conteudo_txt)
 
-        log_callback(f"✓ Texto exportado: {nome_txt}")
-
-        # 19. Resumo Executivo (sem alteração)
+        # 19. Resumo Executivo
         log_callback(f"\n" + "=" * 80)
         log_callback("RESUMO EXECUTIVO")
-        #... (o restante do script é idêntico e não precisa ser colado)
-
-        # (Ocultando o restante do script que não teve alteração)
-        print(f"\n" + "=" * 80)
-        print("RESUMO EXECUTIVO")
-        print("=" * 80)
-        # ... (código do resumo executivo) ...
-        print(f"\n✅ Relatório consolidado gerado com sucesso!")
-        print("=" * 80)
+        log_callback("=" * 80)
+        log_callback(f"Média Atual:    {int(media_atual)} pessoas/dia")
+        log_callback(f"Média Anterior: {int(media_anterior)} pessoas/dia")
+        log_callback(f"Variação:       {variacao:+.1f}%")
+        log_callback("-" * 40)
+        log_callback(f"Destaques do dia {ultimo_dia_val.strftime('%d/%m/%Y')}:")
+        log_callback(f"  • Madrugada: {int(madr['total'])} pessoas ({int(madr['enderecos'])} aglomerações)")
+        log_callback(f"  • Manhã:     {int(manha['total'])} pessoas ({int(manha['enderecos'])} aglomerações)")
+        log_callback(f"  • Tarde:     {int(tarde['total'])} pessoas ({int(tarde['enderecos'])} aglomerações)")
+        log_callback(f"  • Noite:     {int(noite['total'])} pessoas ({int(noite['enderecos'])} aglomerações)")
+        log_callback("=" * 80)
         
-        # Retorna os caminhos dos arquivos gerados
         return str(caminho_saida), str(caminho_txt)
 
     except Exception as e:
