@@ -25,14 +25,17 @@ class HubConversores:
         tk.Label(root, text="Selecione o Conversor:", font=("Arial", 10, "italic")).pack(pady=15)
 
         # Botão: Conversor Bairral
-        self.btn_bairral = tk.Button(root, text="PDF Bairral", command=lambda: self.abrir_conversor("bairral"), 
-                                      width=30, height=2, bg="#4FC3F7")
+        self.btn_bairral = tk.Button(root, text="PDF Bairral", 
+                                    command=lambda: self.abrir_conversor("bairral"), 
+                                    width=30, height=2, bg="#4FC3F7")
         self.btn_bairral.pack(pady=5)
 
         # Botão: Conversor Y (Exemplo)
-        self.btn_y = tk.Button(root, text="Conversor Y", command=lambda: self.abrir_conversor("conversor_y"), 
-                                width=30, height=2, bg="#4DB6AC")
-        self.btn_y.pack(pady=5)
+        # No hub_principal.py, substitua o botão do "Conversor Y" por:
+        self.btn_bezerra = tk.Button(root, text="PDF Bezerra de Menezes", 
+                                    command=lambda: self.abrir_conversor("bezerra_menezes"), 
+                                    width=30, height=2, bg="#4DB6AC")
+        self.btn_bezerra.pack(pady=5)
 
     def abrir_tutorial(self):
         # Você pode abrir um arquivo de texto ou uma messagebox

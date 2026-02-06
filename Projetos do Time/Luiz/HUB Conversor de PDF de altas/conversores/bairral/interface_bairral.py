@@ -60,7 +60,8 @@ class ConversorApp:
                     "Data admissão": resultado["Data Entrada"],
                     "Unidade": resultado["Unidade"],
                     "Tipo de alta": resultado["Tipo de Alta"],
-                    "Data da alta": resultado["Data Alta"]
+                    "Data da alta": resultado["Data Alta"],
+                    "Equipamento Social de passagem": resultado["Equipamento Social"]
                 }
                 dados_acumulados.append(linha)
 
@@ -73,7 +74,16 @@ class ConversorApp:
             df = pd.DataFrame(dados_acumulados)
             
             # Garantir a ordem exata das colunas solicitada
-            colunas_ordem = ["Nome do paciente", "DN", "Nome da mãe", "Data admissão", "Unidade", "Tipo de alta", "Data da alta"]
+            colunas_ordem = [
+                             "Nome do paciente", 
+                             "DN", 
+                             "Nome da mãe", 
+                             "Data admissão", 
+                             "Unidade", 
+                             "Tipo de alta", 
+                             "Data da alta",
+                             "Equipamento Social de passagem"
+                             ]
             df = df[colunas_ordem]
 
             data_id = datetime.now().strftime("%d%m%y")
