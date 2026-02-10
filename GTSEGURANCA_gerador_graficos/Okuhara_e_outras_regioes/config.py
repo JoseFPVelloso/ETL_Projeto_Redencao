@@ -25,9 +25,17 @@ if hoje.month < 6:
 
 DATA_INICIO_MENSAL = datetime(ano_mensal, 6, 1)
 
+# --- Configurações de Períodos ---
+PERIODOS_DISPONIVEIS = [
+    ("05h (Madrugada)", "05h"),
+    ("10h (Manhã)", "10h"),
+    ("15h (Tarde)", "15h"),
+    ("20h (Noite)", "20h")
+]
+
 # --- Estilos da UI ---
-TITLE = "Analisador Okuhara & Centro - Versão PRO"
-GEOMETRY = "900x650" # Aumentei um pouco para caber os checkboxes
+TITLE = "Analisador Okuhara & Centro"
+GEOMETRY = "900x750" # Aumentei um pouco para caber os checkboxes
 BG_COLOR = "#f4f4f9"
 ACCENT_COLOR = "#2980b9" # Azul mais sóbrio
 ERROR_COLOR = "#c0392b"

@@ -4,7 +4,6 @@ from tkcalendar import DateEntry
 import pandas as pd
 import threading
 import os
-from datetime import datetime
 import config
 from logic import AnalisadorDados
 
@@ -16,7 +15,8 @@ class App(tk.Tk):
         self.configure(bg=config.BG_COLOR)
         
         self.logic = AnalisadorDados()
-        self.check_vars = {} 
+        self.check_vars_regioes = {} 
+        self.check_vars_periodos = {} # Nova variável para os períodos
         
         # Mapa
         ok_mapa, msg_mapa = self.logic.carregar_mapa_regioes()
@@ -43,13 +43,12 @@ class App(tk.Tk):
         self.lbl_arquivo.pack(side=tk.LEFT, padx=(0, 10))
 
         # 2. ÁREA CENTRAL (SPLIT VIEW)
-        tk.Label(main, text="2. Seleção de Regiões (Passe o mouse para ver detalhes)", bg=bg, font=font_head).pack(anchor="w")
+        tk.Label(main, text="2. Seleção de Regiões", bg=bg, font=font_head).pack(anchor="w")
         
-        # PanedWindow para dividir Esquerda (Checks) e Direita (Lista)
         paned = tk.PanedWindow(main, orient=tk.HORIZONTAL, bg="#ccc", sashwidth=4)
         paned.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        # --- LADO ESQUERDO: CHECKBOXES ---
+        # --- LADO ESQUERDO: LISTA DE REGIÕES ---
         frm_left = tk.Frame(paned, bg="white")
         paned.add(frm_left, minsize=300)
         
@@ -73,15 +72,26 @@ class App(tk.Tk):
         self.lbl_detalhe_titulo = tk.Label(frm_right, text="Detalhes da Região", bg="#ddd", pady=5, font=("Segoe UI", 9, "bold"))
         self.lbl_detalhe_titulo.pack(fill=tk.X)
         
-        # Listbox para mostrar logradouros
         self.lst_logradouros = tk.Listbox(frm_right, bg="#f8f9fa", bd=0, highlightthickness=0, font=("Segoe UI", 9))
         self.lst_logradouros.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Instrução inicial na lista
         self.lst_logradouros.insert(0, "Passe o mouse sobre uma região")
-        self.lst_logradouros.insert(1, "para ver os logradouros aqui.")
 
-        # 3. DATAS E BOTÃO
+        # 3. NOVO: SELEÇÃO DE PERÍODOS
+        frm_periodos = tk.Frame(main, bg=bg)
+        frm_periodos.pack(fill=tk.X, pady=(10, 0))
+        tk.Label(frm_periodos, text="3. Períodos para Análise", bg=bg, font=font_head).pack(anchor="w")
+        
+        frm_chk_p = tk.Frame(frm_periodos, bg=bg)
+        frm_chk_p.pack(fill=tk.X, pady=5)
+        
+        # Gera checkboxes dinamicamente baseado no config
+        for nome_ui, termo_busca in config.PERIODOS_DISPONIVEIS:
+            var = tk.BooleanVar(value=True) # Começa marcado por padrão
+            self.check_vars_periodos[termo_busca] = var
+            cb = tk.Checkbutton(frm_chk_p, text=nome_ui, variable=var, bg=bg, font=("Segoe UI", 9))
+            cb.pack(side=tk.LEFT, padx=(0, 15))
+
+        # 4. DATAS E BOTÃO
         frm_bottom = tk.Frame(main, bg=bg)
         frm_bottom.pack(fill=tk.X, pady=(15, 0))
         
@@ -119,42 +129,31 @@ class App(tk.Tk):
             if ok: self.criar_lista_regioes()
 
     def criar_lista_regioes(self):
-        # Limpa
         for w in self.scroll_frame.winfo_children(): w.destroy()
-        self.check_vars.clear()
+        self.check_vars_regioes.clear()
         
-        # Botões Selecionar Tudo / Nenhum
         frm_botoes = tk.Frame(self.scroll_frame, bg="white")
         frm_botoes.pack(fill=tk.X, pady=2)
         tk.Button(frm_botoes, text="Todos", command=lambda: self.toggle_all(True), font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=2)
         tk.Button(frm_botoes, text="Nenhum", command=lambda: self.toggle_all(False), font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=2)
 
-        # Cria Checkboxes
         for reg in self.logic.regioes_disponiveis:
             var = tk.BooleanVar(value=True)
-            self.check_vars[reg] = var
-            
-            # Checkbutton
+            self.check_vars_regioes[reg] = var
             chk = tk.Checkbutton(self.scroll_frame, text=reg, variable=var, bg="white", anchor="w")
             chk.pack(fill="x", padx=5, pady=1)
-            
-            # EVENTOS DE MOUSE (A MÁGICA)
             chk.bind("<Enter>", lambda e, r=reg: self.mostrar_detalhes(r))
 
     def toggle_all(self, state):
-        for var in self.check_vars.values(): var.set(state)
+        for var in self.check_vars_regioes.values(): var.set(state)
 
     def mostrar_detalhes(self, regiao):
-        """Atualiza a lista da direita com os logradouros da região sob o mouse"""
         self.lbl_detalhe_titulo.config(text=f"Logradouros: {regiao}")
         self.lst_logradouros.delete(0, tk.END)
-        
         logs = self.logic.obter_logradouros_da_regiao(regiao)
         if logs:
-            for l in logs:
-                self.lst_logradouros.insert(tk.END, f"• {l}")
-        else:
-            self.lst_logradouros.insert(tk.END, "(Nenhum logradouro encontrado)")
+            for l in logs: self.lst_logradouros.insert(tk.END, f"• {l}")
+        else: self.lst_logradouros.insert(tk.END, "(Nenhum logradouro encontrado)")
 
     def log(self, msg):
         self.txt_log.config(state='normal')
@@ -162,27 +161,25 @@ class App(tk.Tk):
         self.txt_log.see(tk.END); self.txt_log.config(state='disabled')
 
     def executar(self):
-        if not self.logic.df is not None: return messagebox.showwarning("Ops", "Selecione o arquivo primeiro")
-        sel = [r for r, v in self.check_vars.items() if v.get()]
-        if not sel: return messagebox.showwarning("Ops", "Selecione ao menos uma região")
+        if self.logic.df is None: return messagebox.showwarning("Ops", "Selecione o arquivo primeiro")
+        
+        sel_regioes = [r for r, v in self.check_vars_regioes.items() if v.get()]
+        if not sel_regioes: return messagebox.showwarning("Ops", "Selecione ao menos uma região")
+
+        sel_periodos = [p for p, v in self.check_vars_periodos.items() if v.get()]
+        if not sel_periodos: return messagebox.showwarning("Ops", "Selecione ao menos um período (05h, 10h...)")
         
         self.btn_run.config(state="disabled", text="Processando...")
-        threading.Thread(target=self._run_thread, args=(sel,), daemon=True).start()
+        # Passamos também os periodos selecionados para a thread
+        threading.Thread(target=self._run_thread, args=(sel_regioes, sel_periodos), daemon=True).start()
 
-    def _run_thread(self, sel):
+    def _run_thread(self, sel_regioes, sel_periodos):
         try:
-            # === A CORREÇÃO ESTÁ AQUI ===
-            # Convertemos o resultado do DateEntry (date) para Timestamp (pandas)
-            pd_d = {
-                'inicio': pd.to_datetime(self.dt_ini_d.get_date()), 
-                'fim': pd.to_datetime(self.dt_fim_d.get_date())
-            }
-            pd_m = {
-                'inicio': pd.to_datetime(self.dt_ini_m.get_date()), 
-                'fim': pd.to_datetime(self.dt_fim_m.get_date())
-            }
+            pd_d = {'inicio': pd.to_datetime(self.dt_ini_d.get_date()), 'fim': pd.to_datetime(self.dt_fim_d.get_date())}
+            pd_m = {'inicio': pd.to_datetime(self.dt_ini_m.get_date()), 'fim': pd.to_datetime(self.dt_fim_m.get_date())}
             
-            ok, msg = self.logic.gerar_todos_relatorios(pd_d, pd_m, sel)
+            # Chama a lógica passando os períodos
+            ok, msg = self.logic.gerar_todos_relatorios(pd_d, pd_m, sel_regioes, sel_periodos)
             self.after(0, lambda: self._end(ok, msg))
         except Exception as e:
             self.after(0, lambda: self._end(False, str(e)))
