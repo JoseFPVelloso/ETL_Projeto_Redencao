@@ -133,31 +133,61 @@ class AnalisadorDados:
     # --- LÓGICA DO DIÁRIO ATUALIZADA ---
     def _processar_ranking_excel(self, df, caminho, d_ini, d_fim, periodos_ativos):
         dias = (d_fim - d_ini).days + 1
-        total_p = dias * len(periodos_ativos) # Média considera o número de períodos selecionados
+        total_p = dias * len(periodos_ativos)
         abas = []
         
         with pd.ExcelWriter(caminho, engine='openpyxl') as writer:
-            # Ordena regiões por volume total
             for reg in df.groupby('Regiao')['Quantidade'].sum().sort_values(ascending=False).index:
                 df_reg = df[df['Regiao'] == reg]
                 
-                # --- ABA 1: RESUMO (Rank Região) ---
+                # --- ABA 1: RESUMO ---
                 df_rank = df_reg.groupby('Logradouro').agg({'Quantidade':'sum'}).reset_index()
-                # Calcula média baseada no nº de dias e nº de períodos
                 df_rank['Média'] = df_rank['Quantidade'] / total_p if total_p > 0 else 0
                 
                 detalhes = []
                 for l in df_rank['Logradouro']:
                     dl = df_reg[df_reg['Logradouro']==l]
                     stats = {}
-                    # Loop Dinâmico pelos períodos escolhidos
                     for p in periodos_ativos:
                         soma_p = dl[dl['Periodo'].str.contains(p, case=False, na=False)]['Quantidade'].sum()
                         stats[p] = soma_p / dias if dias > 0 else 0
                     detalhes.append(stats)
                 
                 df_rank = pd.concat([df_rank, pd.DataFrame(detalhes)], axis=1).sort_values('Média', ascending=False)
+                
+                # [NOVO] Renomeia as colunas antes de salvar (ex: 05h -> Madrugada)
+                df_rank.rename(columns=config.MAPA_NOMES_PERIODOS, inplace=True)
+                
                 df_rank.to_excel(writer, sheet_name=self._sanitizar_nome_aba(f"Rank {reg}", abas), index=False)
+                
+                # --- ABAS DETALHADAS ---
+                def classificar_periodo(texto_periodo):
+                    for p in periodos_ativos:
+                        if p in str(texto_periodo):
+                            return p
+                    return 'Outros'
+
+                for l in df_rank['Logradouro']:
+                    dd = df_reg[df_reg['Logradouro']==l].copy()
+                    dd['P_Norm'] = dd['Periodo'].apply(classificar_periodo)
+                    dd = dd[dd['P_Norm'].isin(periodos_ativos)]
+
+                    piv = dd.pivot_table(index='Data', columns='P_Norm', values='Quantidade', aggfunc='sum', fill_value=0)
+                    piv = piv.reindex(pd.date_range(d_ini, d_fim, freq='D'), fill_value=0).reset_index().rename(columns={'index':'Data'})
+                    piv['Data'] = piv['Data'].dt.strftime('%d/%m/%Y')
+                    
+                    piv['Logradouro'] = l
+                    
+                    # Ordena primeiro usando as chaves originais (05h, 10h...)
+                    cols_periodos = [c for c in periodos_ativos if c in piv.columns]
+                    nova_ordem = ['Logradouro', 'Data'] + cols_periodos
+                    extras = [c for c in piv.columns if c not in nova_ordem]
+                    piv = piv[nova_ordem + extras]
+                    
+                    # [NOVO] Renomeia as colunas por último
+                    piv.rename(columns=config.MAPA_NOMES_PERIODOS, inplace=True)
+                    
+                    piv.to_excel(writer, sheet_name=self._sanitizar_nome_aba(l, abas), index=False)
                 
                 # --- ABAS 2...N: DETALHE POR LOGRADOURO ---
                 # Função auxiliar para classificar a linha em um dos períodos selecionados
@@ -263,6 +293,16 @@ class AnalisadorDados:
                     
                     l_princ.append(row_total)
                     l_graf.append(graf_data)
+                    
+                df_princ = pd.DataFrame(l_princ)
+                df_princ.rename(columns=config.MAPA_NOMES_PERIODOS, inplace=True)
+                
+                df_graf = pd.DataFrame(l_graf)
+                df_graf.rename(columns=config.MAPA_NOMES_PERIODOS, inplace=True)
+
+                # Salva com os nomes novos
+                df_princ.to_excel(writer, sheet_name=self._sanitizar_nome_aba(reg, abas), index=False)
+                df_graf.to_excel(writer, sheet_name=self._sanitizar_nome_aba(f"{reg} - Graf", abas), index=False)
                 
                 pd.DataFrame(l_princ).to_excel(writer, sheet_name=self._sanitizar_nome_aba(reg, abas), index=False)
                 pd.DataFrame(l_graf).to_excel(writer, sheet_name=self._sanitizar_nome_aba(f"{reg} - Graf", abas), index=False)

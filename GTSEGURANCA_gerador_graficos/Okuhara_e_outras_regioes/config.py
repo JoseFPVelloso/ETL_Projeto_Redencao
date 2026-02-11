@@ -13,7 +13,7 @@ if not os.path.exists(OUTPUT_FOLDER):
 hoje = datetime.now()
 
 # Padrão 1: Últimos 15 dias (Ranking Diário)
-DATA_FIM_PADRAO = hoje
+DATA_FIM_PADRAO = hoje - timedelta(days=1)
 DATA_INICIO_DIARIA = hoje - timedelta(days=15)
 
 # Padrão 2: Desde Junho (Evolução Mensal)
@@ -32,6 +32,13 @@ PERIODOS_DISPONIVEIS = [
     ("15h (Tarde)", "15h"),
     ("20h (Noite)", "20h")
 ]
+
+MAPA_NOMES_PERIODOS = {
+    "05h": "Madrugada",
+    "10h": "Manhã",
+    "15h": "Tarde",
+    "20h": "Noite"
+}
 
 # --- Estilos da UI ---
 TITLE = "Analisador Okuhara & Centro"

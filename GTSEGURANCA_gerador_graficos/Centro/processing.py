@@ -71,6 +71,8 @@ def parse_date(date_str):
     except ValueError:
         return None
 
+# Em processing.py
+
 def generate_top15_excel(df_filtered, days_interval, end_date_str):
     """Gera o relatório Excel Top 15."""
     data_fim = parse_date(end_date_str)
@@ -183,9 +185,17 @@ def generate_top15_excel(df_filtered, days_interval, end_date_str):
             # Ordena e Converte para Int
             df_rua_pivot = df_rua_pivot[periodos_ordem].astype(int)
 
-            # Insere o Nome da Rua como primeira coluna
+            # --- AQUI ESTÁ A MUDANÇA ---
+            # Reset index para transformar Data em coluna
             df_rua_pivot = df_rua_pivot.reset_index()
+
+            # FORMATAÇÃO OBRIGATÓRIA: Transforma em string "DD/MM/AAAA"
+            if 'Data' in df_rua_pivot.columns:
+                df_rua_pivot['Data'] = df_rua_pivot['Data'].dt.strftime('%d/%m/%Y')
+            
+            # Insere o Nome da Rua como primeira coluna
             df_rua_pivot.insert(0, 'Logradouro', rua)
+            # ---------------------------
             
             sheet_name = f"{idx}_{rua[:20]}"
             clean_sheet_name = re.sub(r'[\\/*?:\[\]]', '', sheet_name)[:31]
