@@ -38,45 +38,47 @@ class BezerraApp:
             self.btn_processar.config(state="normal")
 
     def processar(self):
-        pasta_saida = "Relatorios_Extraidos"
-        if not os.path.exists(pasta_saida):
-            os.makedirs(pasta_saida)
+            pasta_saida = "Relatorios_Extraidos"
+            if not os.path.exists(pasta_saida):
+                os.makedirs(pasta_saida)
 
-        dados_acumulados = []
-        for caminho in self.arquivos_selecionados:
-            res = extrair_dados_bezerra(caminho)
-            if res:
-                dados_acumulados.append({
-                    "Nome do paciente": res["Nome"],
-                    "DN": res["Data Nascimento"],
-                    "Nome da mãe": res["Nome da Mãe"],
-                    "Data admissão": res["Data Entrada"],
-                    "Unidade": res["Unidade"],
-                    "Tipo de alta": res["Tipo de Alta"],
-                    "Data da alta": res["Data Alta"],
-                    "Equipamento Social de passagem": res["Equipamento Social"]
-                })
+            dados_acumulados = []
+            for caminho in self.arquivos_selecionados:
+                res = extrair_dados_bezerra(caminho)
+                if res:
+                    dados_acumulados.append({
+                        "Nome do paciente": res["Nome"],
+                        "DN": res["Data Nascimento"],
+                        "Nome da mãe": res["Nome da Mãe"],
+                        "Data admissão": res["Data Entrada"],
+                        "Unidade": res["Unidade"],
+                        "Tipo de alta": res["Tipo de Alta"],
+                        "Data da alta": res["Data Alta"],
+                        "Equipamento Social de passagem": res["Equipamento Social"],
+                        "CAPS REFERENCIA": res["CAPS REFERENCIA"] # <-- NOVA LINHA ADICIONADA AQUI
+                    })
 
-        if not dados_acumulados:
-            messagebox.showwarning("Erro", "Nenhum dado extraído.")
-            return
+            if not dados_acumulados:
+                messagebox.showwarning("Erro", "Nenhum dado extraído.")
+                return
 
-        try:
-            df = pd.DataFrame(dados_acumulados)
-            colunas = ["Nome do paciente", "DN", "Nome da mãe", "Data admissão", 
-                       "Unidade", "Tipo de alta", "Data da alta", "Equipamento Social de passagem"]
-            df = df[colunas]
+            try:
+                df = pd.DataFrame(dados_acumulados)
+                # <-- NOVA COLUNA ADICIONADA NA LISTA ABAIXO
+                colunas = ["Nome do paciente", "DN", "Nome da mãe", "Data admissão", 
+                        "Unidade", "Tipo de alta", "Data da alta", "Equipamento Social de passagem", "CAPS REFERENCIA"] 
+                df = df[colunas]
 
-            data_id = datetime.now().strftime("%d%m%y")
-            random_id = uuid.uuid4().hex[:4]
-            nome_arquivo = f"Instituto_Bezerra_de_menezes_{data_id}_{random_id}.xlsx"
-            caminho_final = os.path.join(pasta_saida, nome_arquivo)
-            
-            df.to_excel(caminho_final, index=False)
-            messagebox.showinfo("Sucesso", f"Gerado: {nome_arquivo}")
-            os.startfile(os.path.abspath(pasta_saida))
-        except Exception as e:
-            messagebox.showerror("Erro", str(e))
+                data_id = datetime.now().strftime("%d%m%y")
+                random_id = uuid.uuid4().hex[:4]
+                nome_arquivo = f"Instituto_Bezerra_de_menezes_{data_id}_{random_id}.xlsx"
+                caminho_final = os.path.join(pasta_saida, nome_arquivo)
+                
+                df.to_excel(caminho_final, index=False)
+                messagebox.showinfo("Sucesso", f"Gerado: {nome_arquivo}")
+                os.startfile(os.path.abspath(pasta_saida))
+            except Exception as e:
+                messagebox.showerror("Erro", str(e))
 
 if __name__ == "__main__":
     root = tk.Tk()
