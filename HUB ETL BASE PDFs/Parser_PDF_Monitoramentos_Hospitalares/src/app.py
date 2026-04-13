@@ -95,14 +95,14 @@ class App:
         self.labels_arquivos["leitos_sm"] = ttk.Label(config_frame, text="Nenhum arquivo", foreground="grey")
         self.labels_arquivos["leitos_sm"].grid(row=0, column=2, padx=5, pady=5, sticky=tk.E, ipadx=10)
 
-        ttk.Label(config_frame, text="Acolhimento Terapêutico:").grid(row=1, column=0, padx=5, pady=8, sticky=tk.W)
+        ttk.Label(config_frame, text="Camas Acolhimento:").grid(row=1, column=0, padx=5, pady=8, sticky=tk.W)
         btn2 = ttk.Button(config_frame, text="Carregar...", 
                           command=lambda: self.carregar_arquivo("acolhimento"))
         btn2.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
         self.labels_arquivos["acolhimento"] = ttk.Label(config_frame, text="Nenhum arquivo", foreground="grey")
         self.labels_arquivos["acolhimento"].grid(row=1, column=2, padx=5, pady=5, sticky=tk.E, ipadx=10)
 
-        ttk.Label(config_frame, text="Desenvolvimento Social:").grid(row=2, column=0, padx=5, pady=8, sticky=tk.W)
+        ttk.Label(config_frame, text="Camas:").grid(row=2, column=0, padx=5, pady=8, sticky=tk.W)
         btn3 = ttk.Button(config_frame, text="Carregar...", 
                           command=lambda: self.carregar_arquivo("desenvolvimento_social"))
         btn3.grid(row=2, column=1, padx=5, pady=5, sticky=tk.EW)

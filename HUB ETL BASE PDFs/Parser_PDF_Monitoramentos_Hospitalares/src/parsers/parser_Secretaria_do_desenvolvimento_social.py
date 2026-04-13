@@ -1,164 +1,104 @@
-# /src/parsers/parser_Secretaria_do_desenvolvimento_social.py
+# parsers/parser_Secretaria_do_desenvolvimento_social.py
+# Parser para o relatório "Secretaria do Desenvolvimento Social" (SEDS)
+# Estratégia: pdfplumber extract_tables() — sem dependência de coordenadas fixas.
 
-import tabula
+import pdfplumber
 import pandas as pd
-import sys
-
-# --- 1. Definições Iniciais (Constantes) ---
-PAGINA_ALVO = 1
-
-# Coordenadas dos SEUS 8 arquivos .sh
-AREA_UNIDADE = [198.396, 202.832, 455.206, 410.174] # Unidade.sh
-
-LISTA_DE_AREAS_DADOS = [
-    [198.396, 116.527, 455.206, 202.832], # Região de Saude.sh
-    [198.396, 416.489, 454.154, 511.214], # Fase.sh
-    [193.134, 508.057, 452.049, 550.157], # Vaga.sh
-    [195.239, 546.999, 454.154, 582.784], # Operacionais.sh
-    [197.344, 582.784, 456.259, 620.674], # Ocupadas.sh
-    [197.344, 622.779, 454.154, 655.407], # Vazias.sh
-    [195.239, 690.139, 457.311, 731.187]  # ocupacao%.sh
-]
-
-# Nomes das 7 colunas de DADOS
-NOMES_COLUNAS_DADOS = [
-    "Região de Saúde", "Fase", "Vaga", "Operacionais", 
-    "Ocupadas", "Vazias", "Ocupação (%)"
-]
-
-# Nomes FINAIS para padronização (8 colunas)
-NOMES_COLUNAS_FINAL = [
-    "Unidade", "Tipo Leito", "Leitos Instalados", "Leitos Operacionais", "Ocupados", 
-    "Vazios", "Bloqueado", "Ocupação (%)"
-]
 
 
-# --- 2. A Função Principal ---
-
-def processar_desenvolvimento_social(arquivo_pdf):
+def _parse_numeric_string(s: str) -> dict:
     """
-    Processa o PDF do Desenvolvimento Social usando as 8 COORDENADAS
-    fornecidas pelo usuário (stream=True).
+    Converte a string numérica concatenada pelo pdfplumber em colunas separadas.
+    Formato: 'Vaga Operacionais Ocupadas Vazias Bloqueadas Ocupação% [Média Mediana]'
+    Exemplo: '35 35 30 5 0 85,7% 87,0 62,0'
+    Exemplo sem tempo: '15 15 0 15 0 0,0%'
     """
-    print(f"Iniciando processamento (Desenvolvimento Social): {arquivo_pdf} (Página {PAGINA_ALVO})")
-
-    try:
-        # --- 3. EXTRAÇÃO DAS UNIDADES (Lógica 1) ---
-        print("Processando Área 1 (Unidades) separadamente...")
-        
-        df_unidades = tabula.read_pdf(arquivo_pdf,
-                                      pages=PAGINA_ALVO,
-                                      area=AREA_UNIDADE,
-                                      stream=True,
-                                      guess=False,
-                                      pandas_options={'header': None})[0]
-        
-        df_unidades.columns = ["Unidade"]
-        
-        # 3.1. Limpeza inicial
-        df_unidades = df_unidades.dropna(how='all').reset_index(drop=True)
-
-        # 3.2. Correção de nomes (bfill + ffill)
-        print("Preenchendo nomes de unidade (Lógica bfill + ffill)...")
-        df_unidades['Unidade'] = df_unidades['Unidade'].bfill(limit=1)
-        df_unidades['Unidade'] = df_unidades['Unidade'].ffill()
-
-        # 3.3. Limpeza final
-        df_unidades_final = df_unidades.dropna(subset=['Unidade']).reset_index(drop=True)
-        print(f"Limpeza concluída. {len(df_unidades_final)} Unidades candidatas encontradas.")
+    if not s or not str(s).strip():
+        return {}
+    tokens = str(s).split()
+    if len(tokens) < 6:
+        return {}
+    return {
+        "Leitos Instalados":    tokens[0],
+        "Leitos Operacionais":  tokens[1],
+        "Ocupados":             tokens[2],
+        "Vazios":               tokens[3],
+        "Ocupação (%)":         tokens[5].replace('%', '').replace(',', '.'),
+    }
 
 
-        # --- 4. EXTRAÇÃO DOS DADOS (Lógica 2) ---
-        print(f"\nExtraindo {len(LISTA_DE_AREAS_DADOS)} áreas de dados (sem unidades)...")
-        
-        lista_tabelas_dados = []
-        for i, area in enumerate(LISTA_DE_AREAS_DADOS):
-            print(f"Processando Área de Dados {i+2}...")
-            df_pedaco = tabula.read_pdf(arquivo_pdf,
-                                        pages=PAGINA_ALVO,
-                                        area=area,
-                                        stream=True,
-                                        guess=False,
-                                        pandas_options={'header': None})[0]
-            lista_tabelas_dados.append(df_pedaco)
+def processar_desenvolvimento_social(caminho_pdf: str) -> pd.DataFrame:
+    """
+    Lê o PDF da Secretaria do Desenvolvimento Social e retorna um DataFrame
+    filtrado apenas para linhas de fase 'FASE COMUNITARIA', com colunas padronizadas.
 
-        # 4.1. Juntar colunas de dados
-        df_dados_bruto = pd.concat(lista_tabelas_dados, axis=1)
-        df_dados_bruto.columns = NOMES_COLUNAS_DADOS
-        
-        # 4.2. Limpeza e FILTRO dos Dados
-        print("Filtrando dados para manter apenas 'Fase' == 'FASE COMUNITARIA'...")
-        
-        df_dados_bruto = df_dados_bruto.dropna(how='all')
-        
-        df_dados_filtrado = df_dados_bruto[df_dados_bruto['Fase'].astype(str).str.strip() == 'FASE COMUNITARIA'].copy()
-        df_dados_filtrado = df_dados_filtrado.reset_index(drop=True)
-        
-        print(f"Filtragem concluída. {len(df_dados_filtrado)} linhas 'FASE COMUNITARIA' encontradas.")
+    Colunas retornadas:
+        Unidade | Leitos Instalados | Leitos Operacionais | Ocupados | Vazios | Ocupação (%)
+    """
+    print(f"Iniciando processamento (Desenvolvimento Social): {caminho_pdf} (Página 1)")
 
+    with pdfplumber.open(caminho_pdf) as pdf:
+        page = pdf.pages[0]
+        tables = page.extract_tables()
 
-        # --- 5. JUNÇÃO FINAL ---
-        print("\n--- Verificando Alinhamento ---")
-        print(f"Total Unidades limpas (com preenchimento): {len(df_unidades_final)}")
-        print(f"Total Linhas 'FASE COMUNITARIA':          {len(df_dados_filtrado)}")
-        
-        if len(df_unidades_final) == len(df_dados_filtrado):
-            print("ALINHAMENTO PERFEITO. Juntando tabelas...")
-            
-            df_final = pd.concat([df_unidades_final, df_dados_filtrado], axis=1)
+    if not tables:
+        raise ValueError(f"Nenhuma tabela encontrada no PDF: {caminho_pdf}")
 
-            # --- 6. Padronização de Colunas (CORRIGIDO) ---
-            print("Padronizando nomes de colunas...")
-            
-            # 1. Adiciona a coluna 'Bloqueado' que falta
-            df_final["Bloqueado"] = 0 
-            
-            # 2. Renomeia explicitamente todas as colunas necessárias
-            df_final = df_final.rename(columns={
-                "Fase": "Tipo Leito",
-                "Vaga": "Leitos Instalados",
-                "Operacionais": "Leitos Operacionais",
-                "Ocupadas": "Ocupados",
-                "Vazias": "Vazios" # Mesmo sendo igual, renomeia para garantir
-                # Unidade e Ocupação (%) já estão corretos
-            })
-            
-            # 3. Filtra e reordena para o padrão final
-            # Esta linha agora tem 100% de certeza que 'Vazios' existe.
-            df_final_padronizado = df_final[NOMES_COLUNAS_FINAL]
+    raw = tables[0]
 
-            print("Processamento concluído com sucesso.")
-            return df_final_padronizado
+    # --- Encontrar a linha do cabeçalho de dados (contém 'DRS' e 'Unidade') ---
+    header_idx = None
+    for i, row in enumerate(raw):
+        if row[0] and 'DRS' in str(row[0]) and row[2] and 'Unidade' in str(row[2]):
+            header_idx = i
+            break
 
-        else:
-            print("\n--- ERRO CRÍTICO DE ALINHAMENTO ---")
-            print("O número de Unidades extraídas NÃO BATE com o número de linhas 'FASE COMUNITARIA'.")
-            return pd.DataFrame() 
+    if header_idx is None:
+        raise ValueError("Cabeçalho de dados não encontrado no PDF de Desenvolvimento Social.")
 
-    except Exception as e:
-        print(f"Ocorreu um erro inesperado em 'parser_Secretaria_do_desenvolvimento_social': {e}", file=sys.stderr)
-        return pd.DataFrame() 
+    data_rows = raw[header_idx + 1:]
 
+    # --- Montar DataFrame bruto ---
+    registros = []
+    for row in data_rows:
+        col0 = str(row[0] or '')
+        if col0.startswith('Fonte:'):
+            break
 
-# --- 3. Bloco de Teste --- # 
-# Essa seção serve para testar o código sem a ferramenta de UI 
-if __name__ == "__main__":
-    print("--- MODO DE TESTE (parser_Secretaria_do_desenvolvimento_social.py) ---") 
-    
-    arquivo_teste = "Camas - Desenvolvimento Social_20251031.pdf"  # Caminho para pdf de teste
-    
-    try:
-        df_resultado = processar_desenvolvimento_social(arquivo_teste)
-        
-        if not df_resultado.empty:
-            print("\nResultado da extração de teste:")
-            print(df_resultado.head())
-            df_resultado.to_excel("../../Tabelas/TESTE_desenvolvimento_social.xlsx", index=False)
-            print("\nArquivo de teste salvo em: /Tabelas/TESTE_desenvolvimento_social.xlsx")
-        else:
-            print("Extração de teste falhou ou retornou vazio.")
-            
-    except FileNotFoundError:
-        print(f"Erro no teste: Arquivo '{arquivo_teste}' não encontrado.")
-    except Exception as e:
-        print(f"Ocorreu um erro inesperado no teste: {e}")
+        fase    = str(row[3] or '').strip()
+        numeric = str(row[4] or '').strip()
+        unidade = str(row[2] or '').replace('\n', ' ').strip() if row[2] else None
+
+        if not fase or not numeric:
+            continue
+
+        parsed = _parse_numeric_string(numeric)
+        if not parsed:
+            continue
+
+        registros.append({
+            "Unidade": unidade if unidade else None,
+            "Fase":    fase,
+            **parsed
+        })
+
+    df = pd.DataFrame(registros)
+    if df.empty:
+        print("AVISO: Nenhum dado extraído do PDF de Desenvolvimento Social.")
+        return df
+
+    # --- Propagar nome da Unidade (linhas FASE RESIDENCIAL não repetem o nome) ---
+    df["Unidade"] = df["Unidade"].replace('', None)
+    df["Unidade"] = df["Unidade"].ffill()
+
+    print("Padronizando nomes de colunas...")
+    print(f"Filtrando dados para manter apenas 'Fase' == 'FASE COMUNITARIA'...")
+    df_fase = df[df["Fase"] == "FASE COMUNITARIA"].copy()
+    print(f"Filtragem concluída. {len(df_fase)} linhas 'FASE COMUNITARIA' encontradas.")
+
+    colunas_finais = ["Unidade", "Leitos Instalados", "Leitos Operacionais",
+                      "Ocupados", "Vazios", "Ocupação (%)"]
+    df_fase = df_fase[colunas_finais].reset_index(drop=True)
+
+    print("Processamento concluído com sucesso.")
+    return df_fase

@@ -18,6 +18,9 @@ Este repositório centraliza rotinas de automação, scripts de ETL (Extract, Tr
 * Realiza a divisão de dados por quadras e logradouros.
 * Gera outputs prontos para análise.
 
+### 📂 Atualizador_base_bi_perfis
+**Função:** Ferramenta para atualiar base do BI das abordagens/perfis.
+**Descrição:** Script parser dedicado à formatação e união de informações entre planilhas para tecer informações de um dashboard de perfis do power BI.
 
 ### 📂 Parser_EXCEL_EquipamentosdeAcolhimento
 **Função:** Tratamento de dados semanais.
